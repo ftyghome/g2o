@@ -1,0 +1,3 @@
+[submodule "g2o/solvers/adapchol/adapchol"]
+	path = g2o/solvers/adapchol/adapchol
+	url = git@github.com:ftyghome/adapchol.git

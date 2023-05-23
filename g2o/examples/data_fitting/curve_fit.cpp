@@ -30,14 +30,14 @@
 #include "g2o/core/auto_differentiation.h"
 #include "g2o/core/base_unary_edge.h"
 #include "g2o/core/base_vertex.h"
-#include "g2o/core/optimization_algorithm_factory.h"
+#include "g2o/core/block_solver.h"
+#include "g2o/core/optimization_algorithm_levenberg.h"
 #include "g2o/core/sparse_optimizer.h"
+#include "g2o/solvers/adapchol/linear_solver_adapchol.h"
 #include "g2o/stuff/command_args.h"
 #include "g2o/stuff/sampler.h"
 
 using namespace std;
-
-G2O_USE_OPTIMIZATION_LIBRARY(dense);
 
 /**
  * \brief the params, a, b, and lambda for a * exp(-lambda * t) + b
@@ -128,14 +128,16 @@ int main(int argc, char** argv) {
   }
 
   // setup the solver
-  g2o::SparseOptimizer optimizer;
-  optimizer.setVerbose(false);
+  auto optimizer = std::make_shared<g2o::SparseOptimizer>();
+  auto linearSolver = std::make_unique<
+      g2o::LinearSolverAdapChol<g2o::BlockSolverX::PoseMatrixType>>();
+  linearSolver->setBlockOrdering(true);
+  auto blockSolver =
+      std::make_unique<g2o::BlockSolverX>(std::move((linearSolver)));
+  auto solver = new g2o::OptimizationAlgorithmLevenberg(std::move(blockSolver));
 
   // allocate the solver
-  g2o::OptimizationAlgorithmProperty solverProperty;
-  optimizer.setAlgorithm(
-      g2o::OptimizationAlgorithmFactory::instance()->construct("lm_dense",
-                                                               solverProperty));
+  optimizer->setAlgorithm(solver);
 
   // build the optimization problem given the points
   // 1. add the parameter vertex
@@ -143,20 +145,20 @@ int main(int argc, char** argv) {
   params->setId(0);
   params->setEstimate(
       Eigen::Vector3d(1, 1, 1));  // some initial value for the params
-  optimizer.addVertex(params);
+  optimizer->addVertex(params);
   // 2. add the points we measured to be on the curve
   for (int i = 0; i < numPoints; ++i) {
     EdgePointOnCurve* e = new EdgePointOnCurve;
     e->setInformation(Eigen::Matrix<double, 1, 1>::Identity());
     e->setVertex(0, params);
     e->setMeasurement(points[i]);
-    optimizer.addEdge(e);
+    optimizer->addEdge(e);
   }
 
   // perform the optimization
-  optimizer.initializeOptimization();
-  optimizer.setVerbose(verbose);
-  optimizer.optimize(maxIterations);
+  optimizer->initializeOptimization();
+  optimizer->setVerbose(verbose);
+  optimizer->optimize(maxIterations);
 
   if (verbose) cout << endl;
 

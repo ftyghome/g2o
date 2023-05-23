@@ -17,3 +17,5 @@ endif(CHOLMOD_FOUND)
 
 # Sparse Module of Eigen is stable starting from 3.1
 add_subdirectory(eigen)
+
+add_subdirectory(adapchol)
