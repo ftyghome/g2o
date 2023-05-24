@@ -1,3 +1,5 @@
+add_definitions(-DDISABLE_PERF_LOG)
+
 add_subdirectory(adapchol/host)
 
 

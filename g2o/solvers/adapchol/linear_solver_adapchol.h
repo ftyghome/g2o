@@ -16,65 +16,48 @@ namespace g2o {
 template <typename MatrixType>
 class LinearSolverAdapChol : public LinearSolverCCS<MatrixType> {
  public:
+  AdapChol::AdapCholContext* context = nullptr;
+
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   LinearSolverAdapChol() : LinearSolverCCS<MatrixType>(), _init(false) {}
 
   virtual bool init() {
     if (_init) return true;
-    auto* AdapCHOLContext = AdapChol::allocateContext();
+    context = AdapChol::allocateContext();
     auto* CPUBackend = AdapChol::allocateCPUBackend();
     auto* FPGABackend = AdapChol::allocateFPGABackend(
         std::string("/lib/firmware/xilinx/adapchol/binary_container_1.bin"), 4);
-    AdapChol::setBackend(AdapCHOLContext, CPUBackend, FPGABackend);
+    AdapChol::setBackend(context, CPUBackend, FPGABackend);
     std::cerr << "AdapCHOL Init Completed!" << std::endl;
     return true;
   }
 
   bool solve(const SparseBlockMatrix<MatrixType>& A, double* x, double* b) {
-    std::cerr << "solve called!" << std::endl;
     assert(A.cols() == A.rows());
     int rowcol = A.cols();
-    auto Cp = new int[rowcol + 1];
-    auto Ci = new int[rowcol * rowcol];
-    auto Cx = new double[rowcol * rowcol];
-    auto matrix = new double*[rowcol];
-    for (int i = 0; i < rowcol; i++) {
-      matrix[i] = new double[rowcol];
-    }
+    int nz = A.nonZeros();
 
-    A.fillCCS(Cp, Ci, Cx, false);
-    for (int i = 0; i < Cp[rowcol]; i++) {
-      int row = Ci[i],
-          col = (int)(std::upper_bound(Cp, Cp + rowcol, i) - Cp) - 1;
-      matrix[row][col] = Cx[i];
-    }
+    auto* cs_A = AdapChol::allocateSparse(rowcol, nz);
+    auto *Ap = AdapChol::getSparseP(cs_A), *Ai = AdapChol::getSparseI(cs_A);
+    auto* Ax = AdapChol::getSparseX(cs_A);
+    A.fillCCS(Ap, Ai,
+              Ax, false);
 
-    for (int i = 0; i < rowcol; i++) {
-      for (int j = 0; j < rowcol; j++) {
-        std::cerr << matrix[i][j] << "\t";
-      }
-      std::cerr << "\n";
-    }
+//    for (int i = 0; i < rowcol; i++) {
+//      std::cerr << Ap[i] << " ";
+//    }
+//    std::cerr << "\n";
+//    for (int i = 0; i < rowcol; i++) {
+//      std::cerr << Ai[i] << " ";
+//    }
+//    std::cerr << "\n";
 
-    std::cerr << "A.cols: " << A.cols() << ", A.rows: " << A.rows()
-              << std::endl;
-    std::cerr << "Col Ptr: ";
-    for (int i = 0; i < rowcol + 1; i++) {
-      std::cerr << Cp[i] << " ";
-    }
-    std::cerr << std::endl;
-    std::cerr << "Row Index: ";
-    for (int i = 0; i < Cp[rowcol]; i++) {
-      std::cerr << Ci[i] << " ";
-    }
-    std::cerr << std::endl;
-    std::cerr << "Values: ";
-    for (int i = 0; i < Cp[rowcol]; i++) {
-      std::cerr << Cx[i] << " ";
-    }
-    std::cerr << std::endl;
-
+//    std::cerr << "Setting A for problem " << rowcol << " " << nz << '\n';
+        AdapChol::setA(context, cs_A);
+        AdapChol::run(context);
+        AdapChol::postSolve(context, b);
+        memcpy(x, b, sizeof(double) * rowcol);
     return true;
   }
   bool solveBlocks_impl(
